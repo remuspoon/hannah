@@ -1,4 +1,4 @@
 .venv
 /data
 .env
-llm-venv
+.venv-llm
