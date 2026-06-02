@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUTF8=1
@@ -32,13 +32,16 @@ RUN mkdir /var/run/sshd \
     && echo "PermitRootLogin yes" >> /etc/ssh/sshd_config \
     && echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
-# Jupyter config -- no password/token, listen on all interfaces
+# Jupyter config -- no password/token, listen on all interfaces, allow RunPod proxy
 RUN jupyter lab --generate-config \
     && echo "c.ServerApp.ip = '0.0.0.0'" >> /root/.jupyter/jupyter_lab_config.py \
     && echo "c.ServerApp.token = ''" >> /root/.jupyter/jupyter_lab_config.py \
     && echo "c.ServerApp.password = ''" >> /root/.jupyter/jupyter_lab_config.py \
     && echo "c.ServerApp.allow_root = True" >> /root/.jupyter/jupyter_lab_config.py \
-    && echo "c.ServerApp.open_browser = False" >> /root/.jupyter/jupyter_lab_config.py
+    && echo "c.ServerApp.open_browser = False" >> /root/.jupyter/jupyter_lab_config.py \
+    && echo "c.ServerApp.allow_origin = '*'" >> /root/.jupyter/jupyter_lab_config.py \
+    && echo "c.ServerApp.allow_origin_pat = '.*'" >> /root/.jupyter/jupyter_lab_config.py \
+    && echo "c.ServerApp.tornado_settings = {'headers': {'Content-Security-Policy': \"frame-ancestors * 'self'\"}}" >> /root/.jupyter/jupyter_lab_config.py
 
 WORKDIR /workspace
 
