@@ -2,3 +2,6 @@
 /data
 .env
 .venv-llm
+**/models/
+**/wandb/
+**/.ipynb_checkpoints/
