@@ -1,47 +1,79 @@
-# ChromaDB setup for Reddit mental health posts
+# Crisis LLM Red-Teaming Project
 
-This folder builds a vector database of r/mentalhealth submissions and uploads them to ChromaDB (cloud) for semantic search.
+Fine-tuning LLaMA 3.1 8B on SuicideWatch Reddit data to create a crisis persona agent for red-teaming a clinical safety LLM. The crisis agent simulates a person in mental health distress to probe whether a safety LLM responds appropriately.
 
-## How it works
+## Architecture
 
-1. **Load data** — Reads `data/mentalhealth_submissions.jsonl` (Reddit submission dump, one JSON object per line).
-2. **Filter** — Keeps only the last 2 years; drops `[deleted]`/`[removed]` posts and authors; keeps only posts with 100+ words in the body.
-3. **Truncate** — ChromaDB has a 16KB document limit. Any post where `title + " | " + selftext` exceeds 16,000 characters has its body truncated so the full document fits.
-4. **Embed & upload** — Each document is `title | selftext`. They’re embedded with OpenAI `text-embedding-3-small` and stored in a ChromaDB collection with metadata (author, permalink, subreddit, etc.). Upload runs in batches with progress saved so you can resume after errors.
+```
+Reddit Dataset → Fine-tuned Crisis LLM → Red Team Harness → Clinical Safety LLM → Evaluation
+```
 
-Outputs: `data/clean_df.csv` (cleaned dataframe), `data/chroma_upload_progress.txt` (last uploaded batch index).
+## Project Status
+
+| Phase | Description | Status |
+|---|---|---|
+| 1 | Data prep | ✅ Done |
+| 2 | Environment setup | ✅ Done |
+| 3 | QLoRA understanding | ✅ Done |
+| 4 | Fine-tuning | ✅ Done |
+| 5 | Inference & evaluation | ← Current |
+| 6 | Red team harness | Upcoming |
+| 7 | Iteration | Upcoming |
+
+## Model
+
+Base: `meta-llama/Llama-3.1-8B`  
+Fine-tuned: `remuspoon/suicidebot-v1` (HuggingFace)  
+Training: QLoRA (rank=16) on 47,500 SuicideWatch posts, 3 epochs, A100 80GB (~8 hours)  
+Best checkpoint: step 17,400 (val loss: 2.2796)
 
 ## Setup
 
-### 1. Dependencies
+### Environment
 
-From the project root (or this folder), use a venv and install:
+Windows with RTX 4060 Ti 16GB, CUDA 13.0 driver.
 
 ```bash
-pip install -r requirements.txt
+pip install torch==2.12.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install transformers==5.9.0 trl==1.4.0 peft==0.19.1 bitsandbytes==0.49.2 accelerate datasets huggingface_hub wandb nbformat
 ```
 
-### 2. Data
+Or use the venv at `.venv-llm`.
 
-Put the Reddit submissions dump at:
+### Model download
+
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="remuspoon/suicidebot-v1",
+    local_dir="./wukong/models/"
+)
+```
+
+## File Structure
 
 ```
-chroma-db/data/mentalhealth_submissions.jsonl
+mentalhealth_ml/
+  data/
+    suicide_watch_sample_50k_v1.csv   ← 50,000 filtered posts
+    SW_train_v1.jsonl                 ← 47,500 training examples
+    SW_cv_v1.jsonl                    ← 2,500 validation examples
+  wukong/
+    suicide_watch_data_prep.ipynb         ← raw NDJSON → filtered CSV
+    suicide_watch_train_test_prep.ipynb   ← CSV → JSONL chat format + split
+    suicide_watch_sft.ipynb               ← QLoRA fine-tuning (ran on RunPod)
+    suicide_watch_playground.ipynb        ← inference & evaluation
+    models/
+      checkpoint-17400/   ← best val loss
+      checkpoint-17800/
+      checkpoint-17814/   ← final step
+  requirements-llm.txt
+  CLAUDE.md               ← full technical documentation
 ```
 
-Each line must be a single JSON object with at least: `title`, `selftext`, `author`, `created_utc`, `permalink`, `id`, `subreddit`, `subreddit_id`, `link_flair_text`, `retrieved_on`.
+## Usage
 
-### 3. Environment variables
+See `wukong/suicide_watch_playground.ipynb` for inference examples. The notebook loads the fine-tuned model and runs the crisis persona with configurable system prompts.
 
-Create a `.env` in the project root (or where `dotenv.load_dotenv()` is run) with:
-
-- **`CHROMA_API_KEY`** — Your ChromaDB cloud API key (required for upload).
-- **`OPENAI_API_KEY`** — Used by the ChromaDB collection’s embedding function (OpenAI).
-
-### 4. ChromaDB collection
-
-The notebook uses an existing cloud collection named `reddit-bot-vdb`. Create it in the ChromaDB dashboard (or uncomment the “Create ChromaDB” cell in the notebook to create it with the OpenAI embedding function).
-
-### 5. Run the notebook
-
-Open `setup.ipynb` and run all cells. For the batch upload, if it stops (e.g. network/API error), run the upload cell again; it will resume from the index stored in `data/chroma_upload_progress.txt`.
+Full technical documentation — training config, generation parameters, known issues, and next steps — is in `CLAUDE.md`.
